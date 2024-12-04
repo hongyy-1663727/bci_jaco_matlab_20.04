@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>bci_jaco_matlab_2004</name>
+  <version>0.0.1</version>
+  <description>The bci_jaco_matlab_2004 package</description>
+
+  <maintainer email="your_email@example.com">Your Name</maintainer>
+  <license>BSD</license>
+
+  <!-- Build tool dependency -->
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <!-- Build dependencies -->
+<build_depend>rospy</build_depend>
+<build_depend>roscpp</build_depend>
+<build_depend>std_msgs</build_depend>
+<build_depend>geometry_msgs</build_depend>
+<build_depend>kinova_msgs</build_depend>
+<build_depend>kinova_driver</build_depend>
+<build_depend>kinova_demo</build_depend>
+<build_depend>tf</build_depend>
+
+<!-- Execution dependencies -->
+<exec_depend>rospy</exec_depend>
+<exec_depend>roscpp</exec_depend>
+<exec_depend>std_msgs</exec_depend>
+<exec_depend>geometry_msgs</exec_depend>
+<exec_depend>kinova_msgs</exec_depend>
+<exec_depend>kinova_driver</exec_depend>
+<exec_depend>kinova_demo</exec_depend>
+<exec_depend>tf</exec_depend>
+
+
+  <!-- Optional: External Python libraries -->
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-pandas</exec_depend>
+  <exec_depend>python3-pygame</exec_depend>
+
+  <!-- Custom modules dependencies (if they are ROS packages) -->
+  <build_depend>robot_control_package</build_depend>
+  <exec_depend>robot_control_package</exec_depend>
+
+  <build_depend>interfaces_reach2grasp_package</build_depend>
+  <exec_depend>interfaces_reach2grasp_package</exec_depend>
+
+</package>
+
