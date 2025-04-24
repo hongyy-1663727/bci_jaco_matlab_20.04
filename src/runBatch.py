@@ -167,8 +167,6 @@ while True:
 			# update goal text
 			interface.userDisplay.updateText(val2)
 
-			print("GOAL:", interface.goalVal, interface.goalDim)
-
 		if val1 == 30:
 			print("CHANGE, val2")
 			if val2 == 1:
