@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- ArUco marker parameters (optional for visual servoing tasks) -->
+  <arg name="marker_size" value="0.1" />
+  <arg name="marker_id" value="102" />
+  
+  <!-- Start the RealSense Camera -->
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="align_depth" value="true"/>
+  </include>
+
+  <!-- Optional: Start ArUco for visual servoing tasks -->
+  <node name="aruco_tracker" pkg="aruco_ros" type="single">
+    <remap from="/camera_info" to="/camera/color/camera_info" />
+    <remap from="/image" to="/camera/color/image_raw" />
+    <param name="image_is_rectified" value="true" />
+    <param name="marker_size" value="$(arg marker_size)" />
+    <param name="marker_id" value="$(arg marker_id)" />
+    <param name="reference_frame" value="camera_color_optical_frame" />
+    <param name="camera_frame" value="camera_color_optical_frame" />
+    <param name="marker_frame" value="camera_marker" />
+  </node>
+
+  <!-- Start the Robot -->
+  <include file="$(find kinova_bringup)/launch/kinova_robot.launch">
+  </include>
+  <include file="$(find j2n6s300_moveit_config)/launch/j2n6s300_demo.launch">
+  </include>
+
+  <!-- Note: Your calibration launch file didn't have this but the example has it -->
+  <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher">
+  </node>
+
+  <!-- Publish calibrated transformation -->
+  <include file="$(find easy_handeye)/launch/publish.launch">
+    <arg name="namespace_prefix" value="kinova_d435_handeyecalibration" />
+    <arg name="eye_on_hand" value="true" />
+
+  </include>
+
+</launch>

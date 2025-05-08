@@ -1,0 +1,54 @@
+<launch>
+  <!-- ========================= -->
+  <!-- 0. User‑tunable settings  -->
+  <!-- ========================= -->
+  <arg name="namespace_prefix" default="kinova_d435i_handeyecalibration_tsai_onHand"/>
+  <arg name="use_hardware"      default="true"/>
+
+  <!-- ========================= -->
+  <!-- 1. Perception (optional)  -->
+  <!-- ========================= -->
+  <!-- RealSense camera stream (still handy for online vision) -->
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch"/>
+
+  <!-- ArUco tracker – keep if you still need marker poses at runtime. -->
+  <node if="$(arg use_hardware)" name="aruco_tracker" pkg="aruco_ros" type="single" output="screen">
+    <remap from="/camera_info" to="/camera/color/camera_info"/>
+    <remap from="/image"       to="/camera/color/image_raw"/>
+    <param name="image_is_rectified" value="false"/>
+    <param name="marker_size"        value="0.10"/>
+    <param name="marker_id"          value="102"/>
+
+    <!-- TF frames (must match those used during calibration) -->
+    <param name="reference_frame" value="world"/>
+    <param name="camera_frame"    value="camera_color_optical_frame"/>
+    <param name="marker_frame"    value="aruco_marker"/>
+  </node>
+
+  <!-- ========================= -->
+  <!-- 2. Robot description       -->
+  <!-- ========================= -->
+  <!-- Use *either* the hardware driver + MoveIt OR the demo. -->
+  <include if="$(arg use_hardware)" file="$(find kinova_bringup)/launch/kinova_robot.launch"/>
+  <include if="$(arg use_hardware)" file="$(find j2n6s300_moveit_config)/launch/moveit_planning_execution.launch"/>
+
+  <include unless="$(arg use_hardware)" file="$(find j2n6s300_moveit_config)/launch/j2n6s300_demo.launch"/>
+
+  <!-- ========================= -->
+  <!-- 3. Publish hand‑eye TF     -->
+  <!-- ========================= -->
+  <include file="$(find easy_handeye)/launch/publish.launch">
+    <arg name="namespace_prefix" value="$(arg namespace_prefix)"/>
+    <arg name="eye_on_hand"      value="true"/>
+
+    <!-- Frame names *must* be identical to those used during calibration -->
+    <arg name="tracking_base_frame"    value="world"/>
+    <arg name="tracking_marker_frame"  value="aruco_marker"/>
+    <arg name="robot_base_frame"       value="j2n6s300_link_base"/>
+    <arg name="robot_effector_frame"   value="camera_color_optical_frame"/>
+
+    <!-- If you stored the YAML somewhere non‑default, point at it here -->
+    <!-- <arg name="yaml_filename" value="$(find my_pkg)/config/handeye_calibration.yaml"/> -->
+  </include>
+</launch>
+

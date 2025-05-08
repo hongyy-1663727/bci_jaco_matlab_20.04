@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Namespace prefix for the calibration process -->
+  <arg name="namespace_prefix" default="kinova_d435_handeyecalibration"/>
+  
+  <!-- ArUco marker parameters -->
+  <arg name="marker_size" default="0.1" doc="Size of the ArUco marker used, in meters"/>
+  <arg name="marker_id" default="102" doc="The ID of the ArUco marker used"/>
+  
+  <!-- Hand-eye calibration parameters -->
+  <arg name="eye_on_hand" default="true" doc="eye-on-hand (true) or eye-on-base (false)"/>
+  <arg name="freehand_robot_movement" default="false" doc="Use position commands (false) or move the robot through MoveIt (true)"/>
+  <arg name="publish_dummy" default="true" doc="Publish a dummy TF to connect camera and robot"/>
+
+  <!-- Robot-specific parameters -->
+  <arg name="move_group" default="arm" doc="MoveIt group name for the robot arm"/>
+  <arg name="move_group_namespace" default="/" doc="Namespace where the move_group is located"/>
+  <arg name="robot_base_frame" default="j2n6s300_link_base" doc="Name of the robot base frame (changed to world)"/>
+  <arg name="robot_effector_frame" default="j2n6s300_end_effector" doc="Name of the robot end-effector frame"/>
+  
+  <!-- Start RealSense D435 camera -->
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="align_depth" default="true"/>
+  </include>
+  
+  <!-- Publish a temporary TF to connect camera to the end effector -->
+  <node if="$(arg publish_dummy)" pkg="tf" type="static_transform_publisher" 
+        name="camera_to_end_effector_dummy" 
+        args="0.1 0 0.1 0 0 0 1 $(arg robot_effector_frame) camera_link 10" />
+  
+  <!-- Start ArUco marker tracker -->
+  <node name="aruco_tracker" pkg="aruco_ros" type="single">
+    <remap from="/camera_info" to="/camera/color/camera_info"/>
+    <remap from="/image" to="/camera/color/image_raw"/>
+    <param name="image_is_rectified" value="true"/>
+    <param name="marker_size" value="$(arg marker_size)"/>
+    <param name="marker_id" value="$(arg marker_id)"/>
+    <param name="reference_frame" value="camera_color_optical_frame"/>
+    <param name="camera_frame" value="camera_color_optical_frame"/>
+    <param name="marker_frame" value="camera_marker"/>
+  </node>
+  
+  <!-- Start Kinova robot driver -->
+  <include file="$(find kinova_bringup)/launch/kinova_robot.launch">
+    <!-- Add any specific Kinova parameters you need here -->
+  </include>
+  
+  <!-- Start MoveIt for Kinova (adjust the file path according to your robot model) -->
+  <include file="$(find j2n6s300_moveit_config)/launch/j2n6s300_demo.launch">
+    <!-- Add any specific MoveIt parameters you need here -->
+  </include>
+  
+  <!-- Wait for joint states to stabilize -->
+  <arg name="start_delay" default="5" doc="Delay in seconds before starting calibration"/>
+  
+  <node pkg="rosservice" type="rosservice" name="wait_for_robot" 
+        args="call --wait /j2n6s300_driver/in/start" output="screen"/>
+  
+  <!-- Start easy_handeye calibration -->
+  <include file="$(find easy_handeye)/launch/calibrate.launch">
+    <arg name="eye_on_hand" value="$(arg eye_on_hand)"/>
+    <arg name="namespace_prefix" value="$(arg namespace_prefix)"/>
+    <arg name="freehand_robot_movement" value="$(arg freehand_robot_movement)"/>
+    <arg name="move_group" value="$(arg move_group)"/>
+    <arg name="move_group_namespace" value="$(arg move_group_namespace)"/>
+    <arg name="robot_base_frame" value="$(arg robot_base_frame)"/>
+    <arg name="robot_effector_frame" value="$(arg robot_effector_frame)"/>
+    <arg name="tracking_base_frame" value="camera_color_optical_frame"/>
+    <arg name="tracking_marker_frame" value="camera_marker"/>
+    <arg name="publish_dummy" value="false"/>
+  </include>
+  
+</launch>
