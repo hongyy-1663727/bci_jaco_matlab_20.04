@@ -233,7 +233,7 @@ class DiscreteActionsRobot():
         rospy.Subscriber("/camera/color/image_raw", Image, self.rgb_cb, queue_size=1, buff_size=2**24)
         rospy.Subscriber("/camera/aligned_depth_to_color/image_raw", Image, self.depth_cb, queue_size=1, buff_size=2**24)
 
-        self.conf_threshold = 0.2
+        self.conf_threshold = 0.25
         self.iou_threshold = 0.4
         self.inference_times = []
         self.frame_count = 0
@@ -253,7 +253,7 @@ class DiscreteActionsRobot():
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.connect(('127.0.0.1', 43210))
 
-        self.home       = [-0.20,-0.40, 0.35]
+        self.home       = [-0.20,-0.40, 0.2]
         self.matlabPos  = [0,0,0]
         self.logOpen    = False
         self.inTargetCount = 0
@@ -353,7 +353,7 @@ class DiscreteActionsRobot():
         self.wristStartX = 3.1415/2 
         self.wristStartY = 0
         # self.wristStartZ = 0.5*3.1415
-        self.wristStartZ = 0.29
+        self.wristStartZ = 0.2
 
         self.operationalModeReset = 0
         self.lowGainMode = 0
@@ -399,6 +399,12 @@ class DiscreteActionsRobot():
         self.velB = 0.4
         self.velK = 1.0
         self.pDiag = 0.8
+        
+        self.controlCondition = 0
+        # last time we flipped controlCondition
+        self.last_toggle_time = rospy.Time(0)
+        # minimum time between toggles
+        self.toggle_debounce = rospy.Duration(0.5)  # 500 ms
 
         self.logOpen2 = 0
         subPose     = rospy.Subscriber('/j2n6s300_driver/out/tool_pose', PoseStamped, self.callbackPose)
@@ -702,7 +708,7 @@ class DiscreteActionsRobot():
         self.userDisplay.screen.fill((0,0,0), (0,0,1000, 500))
         pg.display.flip()
         print("WRISTX", self.wristStartX)
-        self.wristStartZ = 0.29
+        self.wristStartZ = 0.2
         quaternion  = tf.transformations.quaternion_from_euler(self.wristStartX, self.wristStartY, self.wristStartZ,'rxyz')  
         print("Pos", position)
         print("QUAT", quaternion)
@@ -977,7 +983,7 @@ class DiscreteActionsRobot():
             target_position = [
                 self.ee_position[0] + X_remap + 0.05,
                 self.ee_position[1] + Y_remap + 0.08,
-                self.ee_position[2] + Z_remap + 0.05
+                self.ee_position[2] + Z_remap + 0.08
             ]
 
             target_orientation = self.home_orientation
@@ -1068,14 +1074,14 @@ class DiscreteActionsRobot():
 
         self.opos = [
             self.grasp_position[0],
-            self.grasp_position[1] + 0.12,
+            self.grasp_position[1] + 0.07,
             self.grasp_position[2]
         ]
 
         # Use your original subpose sequence
         sub_pos1 = [self.opos[0], self.opos[1], self.opos[2]]
         sub_pos1[1] += 0.01
-        sub_pos1[0] -= 0.03
+        sub_pos1[0] -= 0.01
 
         sub_pos1a = sub_pos1[:]
         sub_pos1a[1] += 0.01
@@ -1120,7 +1126,7 @@ class DiscreteActionsRobot():
             result = cartesian_pose_client(self.gpos, self.grasp_orientation, "j2n6s300_")
             rospy.sleep(1.0)
             # Close gripper
-            result = gripper_client([7400, 7400, 7400], "j2n6s300_")
+            result = gripper_client([7400, 7400, 0], "j2n6s300_")
             rospy.sleep(0.5)
 
             # Move to open position
@@ -1147,7 +1153,21 @@ class DiscreteActionsRobot():
         self.modeswitch = 0
         self.key = input
         
-        if self.longInput == 5:
+        # 2) toggle controlCondition on a long press of “3”
+        if self.longInput == 4:
+            # flip between 0 and 1
+            self.controlCondition = 1 - self.controlCondition
+            rospy.loginfo(f"[INPUT] longInput==4: switched controlCondition to {self.controlCondition}")
+            if self.controlCondition == 0:
+                # red bottom half
+                self.userDisplay.changeBGColor((255, 0, 0))
+            else:
+                # blue bottom half
+                self.userDisplay.changeBGColor((0, 0, 255))
+            # reset so we don’t re-trigger on the same long press
+            self.longInput = 0
+        
+        if self.longInput == 2:
             print("Activate action sequence")
             self.move_to_closest_visible_object()
             self.return_home_without_gripper()
@@ -1350,10 +1370,15 @@ class DiscreteActionsRobot():
             u[2] = int(input == 5) - int(input == 6)
             u[3] = int(input == 8) - int(input == 9)
         elif self.view==4:
-            u[0] = int(input == 1) - int(input == 2)  # +x / -x
-            u[2] = int(input == 3) - int(input == 4)  # +z / -z
+            u[0] = int(input == 2) - int(input == 1)  # +x / -x
+            u[2] = int(input == 4) - int(input == 3)  # +z / -z
             u[1] = 0  # No movement in y
             u[3] = int(input == 8) - int(input == 9)  # Optional rotation if still needed
+        elif self.view == 5:
+            if self.controlCondition == 0:
+                u[0] = int(input == 3) - int(input == 1)  # +x / -x
+            elif self.controlCondition == 1:
+                u[2] = int(input == 3) - int(input == 1)  # +x / -x
 
         alpha = self.assistAlpha
 

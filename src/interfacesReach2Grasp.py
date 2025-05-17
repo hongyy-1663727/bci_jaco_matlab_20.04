@@ -32,7 +32,7 @@ class Display():
         pg.display.flip()
         # self.updateFeedback((100,100,100)) 
         self.font = pg.font.Font(None, 300)
-        self.actionNames = ['R Thumb', 'L Leg', 'L Thumb', 'R Wrist', 'Lips', 'Tongue', 'Both']
+        self.actionNames = ['R Thumb', 'L Leg', 'L Thumb', 'R Wrist', 'Lips', 'Tongue', 'Both','Null']
         self.colors = [
             (233, 37, 127), 
             (244, 120, 50), 
@@ -40,6 +40,7 @@ class Display():
             (59, 196, 227),
             (71, 183, 73),
             (115, 52, 131),
+            (175, 170, 168),
             (175, 170, 168)
         ]
 
