@@ -196,8 +196,7 @@ class DiscreteActionsRobot():
 
         self.userDisplay = Display()
         
-        self.red_centers = []
-        self.blue_centers = []
+        
         
         # --- Vision (YOLO handle detection) ---
         self.bridge = CvBridge()

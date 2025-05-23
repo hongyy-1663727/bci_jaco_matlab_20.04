@@ -5,6 +5,7 @@ import time
 import datetime
 import numpy as np
 import tf
+import cv2.aruco as aruco
 
 from cv_bridge import CvBridge
 
@@ -237,6 +238,8 @@ class DiscreteActionsRobot():
         self.iou_threshold = 0.4
         self.inference_times = []
         self.frame_count = 0
+        
+        self.video_writer = None
 
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
@@ -417,6 +420,16 @@ class DiscreteActionsRobot():
         
     def rgb_cb(self, msg):
         self.rgb_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        if self.video_writer is None:
+            h, w = self.rgb_image.shape[:2]
+            fourcc = cv2.VideoWriter_fourcc(*"XVID")      # or 'MJPG', 'MP4V', etc.
+            fps    = 30                                   # pick whatever matches your camera
+            # timestamped filename
+            now = datetime.datetime.now()
+            fname = now.strftime("%Y-%m-%d-%H-%M-%S") + ".avi"
+            self.video_writer = cv2.VideoWriter(
+                fname, fourcc, fps, (w, h)
+            )
         self.last_rgb = rospy.Time.now()
 
     def depth_cb(self, msg):
@@ -540,7 +553,12 @@ class DiscreteActionsRobot():
 
         # First, detect color buttons
         annotated, red_buttons, blue_buttons = self.detect_color_buttons(self.rgb_image.copy())
-        
+
+        annotated, aruco_333_centers, aruco_456_centers = self.detect_aruco_markers(annotated)
+        self.aruco_333_centers = aruco_333_centers
+        self.aruco_456_centers = aruco_456_centers
+
+
         # Reset handle centers
         self.latest_handle_center = None
         self.latest_cup_center = None
@@ -641,6 +659,9 @@ class DiscreteActionsRobot():
 
         # Display the annotated RGB image
         cv2.imshow("Object Detection", annotated)
+        # Write that frame to disk:
+        if self.video_writer is not None:
+            self.video_writer.write(annotated)
         
         # Display the depth image if available
         if self.depth_image is not None:
@@ -650,9 +671,18 @@ class DiscreteActionsRobot():
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
             rospy.signal_shutdown("User exited")
-        
+            self.shutdown()
+
         # You can add additional key handlers here if needed
         self.userDisplay.checkClose()
+        
+    def shutdown(self):
+        # Call this when rospy.signal_shutdown or at the end
+        if self.video_writer:
+            self.video_writer.release()
+        cv2.destroyAllWindows()
+        rospy.loginfo("Video saved to recorded_stream.avi")
+
 
     def initializeBI(self):
         """"initialize Bayesian inference"""
@@ -846,7 +876,37 @@ class DiscreteActionsRobot():
         time.sleep(.1)
 
         self.goalMet = 1
-        
+
+    def detect_aruco_markers(self, image_bgr):
+        """
+        Detects ArUco markers with ID 333 and 456.
+        Returns: image, centers_333, centers_456
+        """
+        gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+        aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
+        params     = aruco.DetectorParameters()
+        detector = aruco.ArucoDetector(aruco_dict, params)
+        corners, ids, _ = detector.detectMarkers(gray)
+
+        centers_333 = []
+        centers_456 = []
+
+        if ids is not None:
+            for corner, marker_id in zip(corners, ids.flatten()):
+                c = corner[0]
+                cx = int(c[:, 0].mean())
+                cy = int(c[:, 1].mean())
+                if marker_id == 333:
+                    centers_333.append((cx, cy))
+                    cv2.polylines(image_bgr, [corner.astype(int)], True, (0, 255, 255), 2)
+                    cv2.putText(image_bgr, "Aruco333", (cx, cy - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,255), 2)
+                elif marker_id == 456:
+                    centers_456.append((cx, cy))
+                    cv2.polylines(image_bgr, [corner.astype(int)], True, (255, 200, 0), 2)
+                    cv2.putText(image_bgr, "Aruco456", (cx, cy - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 200, 0), 2)
+
+        return image_bgr, centers_333, centers_456
+            
         
     def move_to_closest_visible_object(self):
         if self.rgb_image is None or self.raw_depth is None:
@@ -855,6 +915,8 @@ class DiscreteActionsRobot():
         
         # Ensure red/blue button detection is up to date
         _, self.red_centers, self.blue_centers = self.detect_color_buttons(self.rgb_image.copy())
+        
+        
 
         img_h, img_w = self.rgb_image.shape[:2]
         cx, cy = img_w // 2, img_h // 2
@@ -870,6 +932,11 @@ class DiscreteActionsRobot():
             candidates.append(("red_button", r))
         for b in self.blue_centers:
             candidates.append(("blue_button", b))
+        for a in getattr(self, "aruco_333_centers", []):
+            candidates.append(("aruco333", a))
+        for a in getattr(self, "aruco_456_centers", []):
+            candidates.append(("aruco456", a))  
+
 
         if not candidates:
             rospy.logwarn("No buttons, cup, or handle detected — nothing to move to.")
@@ -960,6 +1027,61 @@ class DiscreteActionsRobot():
                     rospy.logwarn(f"Move to {label} failed.")
             except Exception as e:
                 rospy.logwarn(f"Exception while moving to {label}: {e}")
+        elif label in ["aruco333", "aruco456"]:
+            rospy.loginfo(f"{label} is closest: moving to it")
+            self.move_to_aruco(label, ux, uy, depth_val)
+            return
+
+
+    def move_to_aruco(self, label, u, v, depth_mm):
+        """
+        Move to ArUco marker location.
+        - For ArUco 333: move 10cm above and open gripper.
+        - For ArUco 456: move directly without gripper change.
+        """
+        if depth_mm <= 0 or np.isnan(depth_mm):
+            rospy.logwarn(f"Invalid depth for ArUco {label}")
+            return
+
+        fx, fy = 615.0, 615.0
+        cx, cy = 320.0, 240.0
+
+        X_cam = (u - cx) * depth_mm / 1000.0 / fx
+        Y_cam = (v - cy) * depth_mm / 1000.0 / fy
+        Z_cam = depth_mm / 1000.0
+
+        # Use already transformed TF offsets
+        X_remap = self.pose_ee.pose.position.x
+        Y_remap = self.pose_ee.pose.position.y
+        Z_remap = self.pose_ee.pose.position.z
+
+        # Apply optional Z-offset for ArUco 333
+        y_offset = 0.05 if label == "aruco456" else 0.0
+        z_offset = 0.10 if label == "aruco333" else 0.03
+
+        target_position = [
+            self.ee_position[0] + X_remap,
+            self.ee_position[1] + Y_remap + y_offset,
+            self.ee_position[2] + Z_remap + z_offset
+        ]
+
+        target_orientation = self.home_orientation
+        prefix = "j2n6s300_"
+
+        rospy.loginfo(f"Moving to {label}...")
+
+        try:
+            result = cartesian_pose_client(target_position, target_orientation, prefix)
+            if result:
+                rospy.loginfo(f"Reached {label}")
+                rospy.sleep(1.0)
+                if label == "aruco333":
+                    gripper_client([0, 0, 0], prefix)  # open gripper
+                    rospy.loginfo("Gripper opened at ArUco 333")
+            else:
+                rospy.logwarn(f"Move to {label} failed!")
+        except Exception as e:
+            rospy.logwarn(f"Exception while moving to {label}: {e}")
 
 
     def move_to_cup(self, u, v, depth_mm):
